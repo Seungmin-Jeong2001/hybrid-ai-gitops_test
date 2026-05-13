@@ -1,0 +1,73 @@
+stages:
+  - build
+  - test
+  - notify
+
+# 전역 로그 설정
+before_script:
+  - echo "--- [$(date)] '${CI_JOB_NAME}' 작업을 시작합니다. ---"
+
+# 1. AWS ECR 이미지 빌드 및 푸시
+build-to-ecr:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - echo "[LOG] ECR 인증 설정을 생성 중입니다..."
+    - mkdir -p /kaniko/.docker
+    - echo "{\"credsStore\":\"ecr-login\"}" > /kaniko/.docker/config.json
+    - echo "[LOG] Kaniko 빌드 시작 (대상:${ECR_REPOSITORY_URI}:${CI_COMMIT_SHORT_SHA})"
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --destination "${ECR_REPOSITORY_URI}:${CI_COMMIT_SHORT_SHA}"
+      --destination "${ECR_REPOSITORY_URI}:latest"
+  tags:
+    - wsl
+
+# 2. Trivy 보안 스캔
+container-scan:
+  stage: test
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  script:
+    - echo "[LOG] 보안 스캔 시작 (대상:${ECR_REPOSITORY_URI}:${CI_COMMIT_SHORT_SHA})"
+    - trivy image --severity HIGH,CRITICAL --exit-code 0 "${ECR_REPOSITORY_URI}:${CI_COMMIT_SHORT_SHA}"
+  tags:
+    - wsl
+
+# 3-1. 성공 시 이메일 알림 (SES 활용)
+notify-success:
+  stage: notify
+  image: ubuntu:latest
+  script:
+    - apt-get update && apt-get install -y swaks
+    - echo "[LOG] 성공 이메일을 발송합니다."
+    - |
+      swaks --server $SMTP_HOST --port $SMTP_PORT \
+      --auth-user $SMTP_USER --auth-password $SMTP_PASSWORD \
+      --to $MAIL_TO --from $MAIL_FROM \
+      --header "Subject: [성공] CI/CD 파이프라인 완료" \
+      --body "승민님, 빌드가 성공했습니다! \n\n- ECR 경로: ${ECR_REPOSITORY_URI}:${CI_COMMIT_SHORT_SHA} \n- 로그 확인: ${CI_PIPELINE_URL}"
+  when: on_success
+  tags:
+    - wsl
+
+# 3-2. 실패 시 이메일 알림 (SES 활용)
+notify-failure:
+  stage: notify
+  image: ubuntu:latest
+  script:
+    - apt-get update && apt-get install -y swaks
+    - echo "[LOG] 실패 이메일을 발송합니다."
+    - |
+      swaks --server $SMTP_HOST --port $SMTP_PORT \
+      --auth-user $SMTP_USER --auth-password $SMTP_PASSWORD \
+      --to $MAIL_TO --from $MAIL_FROM \
+      --header "Subject: [경고] CI/CD 파이프라인 실패" \
+      --body "승민님, 파이프라인 작업 중 에러가 발생했습니다. \n\n- 실패한 작업: ${CI_JOB_NAME} \n- 에러 로그 확인: ${CI_PIPELINE_URL}"
+  when: on_failure
+  tags:
+    - wsl
