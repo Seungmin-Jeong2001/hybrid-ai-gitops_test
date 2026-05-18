@@ -8,4 +8,4 @@ spec:
     spec:
       containers:
       - name: app
-        image: [ECR_URI]:latest 
+        image: 380958218266.dkr.ecr.ap-northeast-2.amazonaws.com/ai-serving-api:0c54b807
