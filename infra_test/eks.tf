@@ -8,8 +8,10 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  # API 서버에 외부에서 접속 가능하도록 설정 (ArgoCD 설치를 위해 필요)
   cluster_endpoint_public_access = true
+
+  # 로그 그룹 충돌 방지: 테라폼이 직접 생성하지 않도록 설정
+  create_cloudwatch_log_group = false
 
   authentication_mode = "API_AND_CONFIG_MAP"
 
