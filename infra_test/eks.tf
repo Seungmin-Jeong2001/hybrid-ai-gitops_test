@@ -22,6 +22,11 @@ module "eks" {
       desired_size = 2
       instance_types = ["t3.small"]
       ami_type       = "AL2023_x86_64_STANDARD"
+
+      # ECR 이미지 풀 권한을 명시적으로 추가
+      iam_role_additional_policies = {
+        AmazonEC2ContainerRegistryReadOnly = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      }
     }
   }
 

@@ -1,0 +1,21 @@
+apiVersion: "serving.kserve.io/v1beta1"
+kind: "InferenceService"
+metadata:
+  name: "hybrid-ai-app" # ArgoCD 앱 카드와 매핑될 서비스 이름
+  namespace: default
+spec:
+  predictor:
+    minReplicas: 1 
+    maxReplicas: 3
+    containers:
+      - name: kserve-container
+        image: 380958218266.dkr.ecr.ap-northeast-2.amazonaws.com/hybrid-ai-app:latest # 경로 중요
+        ports:
+          - containerPort: 5000 
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
+          requests:
+            cpu: "500m"
+            memory: 512Mi
