@@ -19,9 +19,14 @@ module "eks" {
     web_nodes = {
       min_size     = 1
       max_size     = 3
-      desired_size = 2
-      instance_types = ["t3.small"]
-      ami_type       = "AL2023_x86_64_STANDARD"
+      desired_size = 1 # 비용 절감을 위해 기본 1대로 축소
+      
+      # 가성비가 좋은 Graviton(ARM) 인스턴스 사용 (t3.small 대비 약 20% 저렴)
+      instance_types = ["t4g.small"]
+      ami_type       = "AL2023_ARM_64_STANDARD"
+      
+      # 스팟 인스턴스 사용 (온디맨드 대비 최대 70-90% 저렴)
+      capacity_type = "SPOT"
 
       # ECR 이미지 풀 권한을 명시적으로 추가
       iam_role_additional_policies = {

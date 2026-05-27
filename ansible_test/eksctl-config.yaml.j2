@@ -16,8 +16,9 @@ vpc:
 # 워커 노드(EC2) 설정
 managedNodeGroups:
   - name: web-nodes
-    instanceType: t3.medium
-    desiredCapacity: 2
+    instanceType: t4g.small
+    spot: true # 스팟 인스턴스 활성화로 비용 절감
+    desiredCapacity: 1
     minSize: 1
     maxSize: 3
     volumeSize: 20
