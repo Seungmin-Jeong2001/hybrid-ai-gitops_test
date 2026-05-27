@@ -1,5 +1,7 @@
 resource "local_file" "ansible_inventory" {
   content = <<-EOT
+    localhost ansible_connection=local
+
     [all:vars]
     cluster_name=${module.eks.cluster_name}
     region=ap-northeast-2
