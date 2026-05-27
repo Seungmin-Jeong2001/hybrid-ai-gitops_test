@@ -37,6 +37,30 @@
       retries: 20
       delay: 10
 
+    - name: 8. KServe 의존성 Cert-Manager 설치 (InferenceService 사용 필수)
+      command: "kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml"
+
+    - name: 9. Cert-Manager 준비 대기
+      command: "kubectl wait --for=condition=Ready pods --all -n cert-manager --timeout=300s"
+
+    - name: 10. KServe 설치 (RawDeployment 모드 - 가벼운 설정)
+      shell: |
+        kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve.yaml
+        kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve-runtimes.yaml
+
+    - name: 11. KServe 이미지 풀 오류 해결 (kube-rbac-proxy 이미지 교체)
+      shell: |
+        kubectl set image deployment/kserve-controller-manager -n kserve \
+        kube-rbac-proxy=quay.io/brancz/kube-rbac-proxy:v0.13.1
+
+    - name: 12. KServe 기본 배포 모드를 RawDeployment로 변경 (Knative/Istio 미사용 환경)
+      shell: |
+        kubectl patch configmap inferenceservice-config -n kserve --type merge -p '{"data": {"deploy": "{\"defaultDeploymentMode\": \"RawDeployment\"}"}}'
+        kubectl rollout restart deployment/kserve-controller-manager -n kserve
+
+    - name: 13. KServe 컨트롤러 준비 완료 대기
+      command: "kubectl wait --for=condition=Available deployment/kserve-controller-manager -n kserve --timeout=300s"
+
     - name: 🎉 [인프라 구축 완료 보고서]
       debug:
         msg:
