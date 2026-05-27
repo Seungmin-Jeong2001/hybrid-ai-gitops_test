@@ -9,7 +9,7 @@ spec:
     maxReplicas: 3
     containers:
       - name: kserve-container
-        image: 380958218266.dkr.ecr.ap-northeast-2.amazonaws.com/hybrid-ai-app:5bf56e9e
+        image: 380958218266.dkr.ecr.ap-northeast-2.amazonaws.com/hybrid-ai-app:558e7f70
         ports:
           - containerPort: 5000 
         resources:
