@@ -146,6 +146,8 @@ ansible-playbook eks-gitops-playbook.yaml
 * **Path**: `manifest`
 * **Cluster URL**: `https://kubernetes.default.svc`
 
+kubectl port-forward svc/hybrid-ai-app-predictor 5000:80
+
 
 4. **확인**: GitLab에서 애플리케이션 소스 변경 후 푸시 시, 본 레포의 `manifest/deployment.yaml`이 자동으로 바뀌며 EKS에 실시간 반영되는지 대시보드를 통해 관찰합니다.
 
