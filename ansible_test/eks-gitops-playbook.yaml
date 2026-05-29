@@ -4,8 +4,6 @@
   connection: local
   gather_facts: no
 
-  # vars 섹션의 하드코딩을 제거하고 inventory.ini의 변수를 사용함
-
   tasks:
     - name: 1. 테라폼이 생성한 EKS 클러스터 접속 정보(Kubeconfig) 갱신 및 로컬 연결
       command: "aws eks update-kubeconfig --region {{ region }} --name {{ cluster_name }}"
@@ -61,13 +59,29 @@
     - name: 13. KServe 컨트롤러 준비 완료 대기
       command: "kubectl wait --for=condition=Available deployment/kserve-controller-manager -n kserve --timeout=300s"
 
-    - name: 14. ArgoCD Image Updater 설치 (Imperative 모드 지원)
-      command: "kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml"
+    - name: 14. ArgoCD Image Updater 설치 (Classic Stable v0.12.2)
+      command: "kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v0.12.2/manifests/install.yaml"
 
     - name: 15. Image Updater ServiceAccount에 IRSA 권한(IAM Role) 연결
       shell: |
         kubectl annotate serviceaccount argocd-image-updater -n argocd \
         eks.amazonaws.com/role-arn=arn:aws:iam::{{ lookup('env', 'AWS_ACCOUNT_ID') | default('380958218266', true) }}:role/argocd-image-updater-role --overwrite
+
+    - name: 15-1. Image Updater가 ECR에 접근할 수 있도록 설정(registries.conf) 준비
+      set_fact:
+        ecr_registry_config: |
+          registries:
+          - name: ECR
+            prefix: {{ lookup('env', 'AWS_ACCOUNT_ID') | default('380958218266', true) }}.dkr.ecr.{{ region }}.amazonaws.com
+            api_url: https://{{ lookup('env', 'AWS_ACCOUNT_ID') | default('380958218266', true) }}.dkr.ecr.{{ region }}.amazonaws.com
+            credentials: ecr
+
+    - name: 15-2. Image Updater가 ECR에 접근할 수 있도록 설정(registries.conf) 패치
+      shell: |
+        kubectl patch configmap argocd-image-updater-config -n argocd --type merge -p '{"data": {"registries.conf": {{ ecr_registry_config | to_json }} }}'
+
+    - name: 15-3. IRSA 권한 및 설정 반영을 위해 Image Updater 재시작
+      command: "kubectl rollout restart deployment argocd-image-updater -n argocd"
 
     - name: 16. ArgoCD Application 및 Image Updater 설정 적용
       command: "kubectl apply -f ../manifest-repo/argocd-app.yaml"

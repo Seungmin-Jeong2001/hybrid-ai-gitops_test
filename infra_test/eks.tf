@@ -29,7 +29,7 @@ module "eks" {
       ami_type       = "AL2023_x86_64_STANDARD"
 
       # 비용 절감을 위해 스팟 인스턴스 유지
-      capacity_type = SPOT
+      capacity_type = "SPOT"
 
       # ECR 이미지 풀 권한을 명시적으로 추가
       iam_role_additional_policies = {
