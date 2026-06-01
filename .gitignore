@@ -63,3 +63,4 @@ kubeconfig
 *.log
 
 inventory.ini
+pf_log.txt

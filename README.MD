@@ -145,7 +145,9 @@ ansible-playbook eks-gitops-playbook.yaml
 * **Sync Policy**: `Automatic` (자동 동기화 필수)
 * **Path**: `manifest`
 * **Cluster URL**: `https://kubernetes.default.svc`
+# 백그라운드로 실행하며 로그는 pf_log.txt에 기록하기
 
+nohup kubectl port-forward svc/hybrid-ai-model-predictor 5000:80 -n default > pf_log.txt 2>&1 &
 
 
 curl -X POST http://localhost:5000/v1/models/hybrid-ai-model:predict \
@@ -155,3 +157,6 @@ curl -X POST http://localhost:5000/v1/models/hybrid-ai-model:predict \
 
 4. **확인**: GitLab에서 애플리케이션 소스 변경 후 푸시 시, 본 레포의 `manifest/deployment.yaml`이 자동으로 바뀌며 EKS에 실시간 반영되는지 대시보드를 통해 관찰합니다.
 
+# 1. 터미널 환경 변수에 토큰 및 계정 정보 주입 (내 진짜 토큰 값 입력)
+export GITHUB_PAT="ghp_내실제깃허브토큰값값값"
+export AWS_ACCOUNT_ID="380958218266"

@@ -67,6 +67,9 @@
         kubectl annotate serviceaccount argocd-image-updater -n argocd \
         eks.amazonaws.com/role-arn=arn:aws:iam::{{ lookup('env', 'AWS_ACCOUNT_ID') | default('380958218266', true) }}:role/argocd-image-updater-role --overwrite
 
+    # =======================================================================
+    # [수정] 복잡한 스크립트 실행 경로(ext:aws) 대신 쿠버네티스 표준 시크릿 주입 방식으로 우회
+    # =======================================================================
     - name: 15-1. Image Updater가 ECR에 접근할 수 있도록 설정(registries.conf) 준비
       set_fact:
         ecr_registry_config: |
@@ -74,14 +77,36 @@
           - name: ECR
             prefix: {{ lookup('env', 'AWS_ACCOUNT_ID') | default('380958218266', true) }}.dkr.ecr.{{ region }}.amazonaws.com
             api_url: https://{{ lookup('env', 'AWS_ACCOUNT_ID') | default('380958218266', true) }}.dkr.ecr.{{ region }}.amazonaws.com
-            credentials: ecr
+            credentials: secret:argocd/aws-ecr-creds#token
 
     - name: 15-2. Image Updater가 ECR에 접근할 수 있도록 설정(registries.conf) 패치
       shell: |
         kubectl patch configmap argocd-image-updater-config -n argocd --type merge -p '{"data": {"registries.conf": {{ ecr_registry_config | to_json }} }}'
 
+    # =======================================================================
+    # [신설 ⭐] AWS CLI로 12시간 보안 토큰을 즉시 생성하여 업데이터가 읽을 수 있는 시크릿으로 바인딩
+    # =======================================================================
+    - name: 15-5. AWS ECR에서 보안 인증 비밀번호를 발급받아 전용 시크릿으로 주입
+      shell: |
+        ECR_TOKEN=$(aws ecr get-login-password --region {{ region }})
+        kubectl create secret generic aws-ecr-creds \
+          -n argocd \
+          --from-literal=token="AWS:${ECR_TOKEN}" \
+          --overwrite=true || true
+
     - name: 15-3. IRSA 권한 및 설정 반영을 위해 Image Updater 재시작
       command: "kubectl rollout restart deployment argocd-image-updater -n argocd"
+
+    # =======================================================================
+    # [유지] 깃허브에 배포 파일을 push 할 수 있도록 PAT 토큰을 시크릿으로 주입
+    # =======================================================================
+    - name: 15-4. Image Updater가 GitHub Git Write-back 시 사용할 깃허브 토큰 시크릿 생성
+      shell: |
+        kubectl create secret generic git-write-back-secret \
+          -n argocd \
+          --from-literal=git.username="Seungmin-Jeong2001" \
+          --from-literal=git.password="{{ lookup('env', 'GITHUB_PAT') }}" \
+          --overwrite=true || true
 
     - name: 16. ArgoCD Application 및 Image Updater 설정 적용
       command: "kubectl apply -f ../manifest-repo/argocd-app.yaml"
