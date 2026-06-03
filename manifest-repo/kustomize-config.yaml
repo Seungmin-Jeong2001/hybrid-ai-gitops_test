@@ -1,0 +1,6 @@
+# KServe InferenceService 안의 이미지 태그를 치환할 수 있도록 경로를 강제 매핑합니다.
+images:
+  - kind: InferenceService
+    group: serving.kserve.io
+    version: v1beta1
+    path: spec/predictor/containers/image

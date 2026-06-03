@@ -17,3 +17,9 @@ output "kubectl_connect_command" {
   description = "WSL에서 이 클러스터에 접속하기 위한 명령어"
   value       = "aws eks update-kubeconfig --region ap-northeast-2 --name ${module.eks.cluster_name}"
 }
+
+output "cloudflare_tunnel_token" {
+  description = "Cloudflare Tunnel 접속을 위한 인증 토큰"
+  value       = cloudflare_tunnel.eks_tunnel.tunnel_token
+  sensitive   = true
+}

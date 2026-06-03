@@ -1,18 +1,17 @@
-apiVersion: "serving.kserve.io/v1beta1"
-kind: "InferenceService"
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
 metadata:
-  name: "hybrid-ai-model"
+  name: hybrid-ai-model
   namespace: default
 spec:
   predictor:
-    minReplicas: 1 
+    minReplicas: 1
     maxReplicas: 3
     containers:
       - name: kserve-container
-        # Image Updater가 이 부분을 실시간으로 Override 함
         image: 380958218266.dkr.ecr.ap-northeast-2.amazonaws.com/ai-serving-api:latest
         ports:
-          - containerPort: 5000 
+          - containerPort: 5000
         resources:
           limits:
             cpu: "1"

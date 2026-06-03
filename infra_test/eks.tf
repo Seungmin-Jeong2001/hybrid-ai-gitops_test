@@ -6,7 +6,7 @@ module "eks" {
   cluster_version = "1.30"
 
   vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
+  subnet_ids = module.vpc.public_subnets
 
   cluster_endpoint_public_access = true
 
@@ -20,9 +20,9 @@ module "eks" {
 
   eks_managed_node_groups = {
     web_nodes = {
-      min_size     = 1
+      min_size     = 0
       max_size     = 3
-      desired_size = 2 # KServe 및 시스템 Pod들의 안정적 운영을 위해 2대 유지
+      desired_size = 0 # 비용 절감을 위해 기본 0대로 설정 (필요 시 1~2대로 조정하여 사용)
 
       # t3.micro보다 메모리가 2배 많은 t3.small 사용 (2vCPU, 2GiB RAM)
       instance_types = ["t3.small"]

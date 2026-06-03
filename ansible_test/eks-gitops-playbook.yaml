@@ -1,122 +1,88 @@
 ---
-- name: EKS 클러스터 위에 ArgoCD 설치 및 환경 구성 자동화
+- name: EKS 클러스터 위에 ArgoCD 및 Cloudflare Tunnel 설치 자동화
   hosts: localhost
   connection: local
   gather_facts: no
 
   tasks:
-    - name: 1. 테라폼이 생성한 EKS 클러스터 접속 정보(Kubeconfig) 갱신 및 로컬 연결
+    - name: 1. 테라폼이 생성한 EKS 클러스터 접속 정보(Kubeconfig) 갱신
       command: "aws eks update-kubeconfig --region {{ region }} --name {{ cluster_name }}"
 
-    - name: 2. ArgoCD 배포를 위한 쿠버네티스 Namespace 생성
+    - name: 2. ArgoCD 배포를 위한 Namespace 생성
       command: "kubectl create namespace argocd"
       ignore_errors: yes
 
-    - name: 3. EKS 클러스터 내부에 ArgoCD 엔진 공식 매니페스트 설치
+    - name: 3. EKS 클러스터 내부에 ArgoCD 엔진 설치
       command: "kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
 
-    - name: 4. 외부 브라우저 접속을 위해 ArgoCD 서버를 LoadBalancer 타입으로 변경
-      command: "kubectl patch svc argocd-server -n argocd -p '{\"spec\": {\"type\": \"LoadBalancer\"}}'"
-
-    - name: 5. ArgoCD Pod가 준비될 때까지 대기
+    - name: 4. ArgoCD Pod가 준비될 때까지 대기
       command: "kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s"
 
-    - name: 6. ArgoCD 대시보드 진입용 초기 어드민 비밀번호 추출
+    - name: 5. ArgoCD 대시보드 진입용 초기 어드민 비밀번호 추출
       shell: "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
       register: argocd_password
       retries: 10
       delay: 5
       until: argocd_password.rc == 0
 
-    - name: 7. AWS가 발급한 외부 접속용 LoadBalancer DNS 주소 획득
-      shell: "kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
-      register: argocd_url
-      until: argocd_url.stdout != ""
-      retries: 20
-      delay: 10
+    - name: 6. Cloudflare Tunnel (cloudflared) 에이전트 배포
+      shell: |
+        kubectl apply -f - <<EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: cloudflared
+          namespace: kube-system
+        spec:
+          selector:
+            matchLabels:
+              app: cloudflared
+          template:
+            metadata:
+              labels:
+                app: cloudflared
+            spec:
+              containers:
+              - name: cloudflared
+                image: cloudflare/cloudflared:latest
+                args:
+                - tunnel
+                - --no-autoupdate
+                - run
+                - --token
+                - {{ cloudflare_tunnel_token }}
+        EOF
 
-    - name: 8. KServe 의존성 Cert-Manager 설치 (InferenceService 사용 필수)
+    - name: 7. KServe 의존성 Cert-Manager 설치
       command: "kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml"
 
-    - name: 9. Cert-Manager 준비 대기
-      command: "kubectl wait --for=condition=Ready pods --all -n cert-manager --timeout=300s"
-
-    - name: 10. KServe 설치 (RawDeployment 모드 - 가벼운 설정)
+    - name: 8. KServe 설치 (RawDeployment 모드)
       shell: |
         kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve.yaml
         kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve-runtimes.yaml
 
-    - name: 11. KServe 이미지 풀 오류 해결 (kube-rbac-proxy 이미지 교체)
-      shell: |
-        kubectl set image deployment/kserve-controller-manager -n kserve \
-        kube-rbac-proxy=quay.io/brancz/kube-rbac-proxy:v0.13.1
-
-    - name: 12. KServe 기본 배포 모드를 RawDeployment로 변경 (Knative/Istio 미사용 환경)
-      shell: |
-        kubectl patch configmap inferenceservice-config -n kserve --type merge -p '{"data": {"deploy": "{\"defaultDeploymentMode\": \"RawDeployment\"}"}}'
-        kubectl rollout restart deployment/kserve-controller-manager -n kserve
-
-    - name: 13. KServe 컨트롤러 준비 완료 대기
-      command: "kubectl wait --for=condition=Available deployment/kserve-controller-manager -n kserve --timeout=300s"
-
-    - name: 14. ArgoCD Image Updater 설치 (Classic Stable v0.12.2)
+    - name: 9. ArgoCD Image Updater 설치
       command: "kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v0.12.2/manifests/install.yaml"
 
-    - name: 15. Image Updater ServiceAccount에 IRSA 권한(IAM Role) 연결
-      shell: |
-        kubectl annotate serviceaccount argocd-image-updater -n argocd \
-        eks.amazonaws.com/role-arn=arn:aws:iam::{{ lookup('env', 'AWS_ACCOUNT_ID') | default('380958218266', true) }}:role/argocd-image-updater-role --overwrite
-
-    # =======================================================================
-    # [수정] 복잡한 스크립트 실행 경로(ext:aws) 대신 쿠버네티스 표준 시크릿 주입 방식으로 우회
-    # =======================================================================
-    - name: 15-1. Image Updater가 ECR에 접근할 수 있도록 설정(registries.conf) 준비
-      set_fact:
-        ecr_registry_config: |
-          registries:
-          - name: ECR
-            prefix: {{ lookup('env', 'AWS_ACCOUNT_ID') | default('380958218266', true) }}.dkr.ecr.{{ region }}.amazonaws.com
-            api_url: https://{{ lookup('env', 'AWS_ACCOUNT_ID') | default('380958218266', true) }}.dkr.ecr.{{ region }}.amazonaws.com
-            credentials: secret:argocd/aws-ecr-creds#token
-
-    - name: 15-2. Image Updater가 ECR에 접근할 수 있도록 설정(registries.conf) 패치
-      shell: |
-        kubectl patch configmap argocd-image-updater-config -n argocd --type merge -p '{"data": {"registries.conf": {{ ecr_registry_config | to_json }} }}'
-
-    # =======================================================================
-    # [신설 ⭐] AWS CLI로 12시간 보안 토큰을 즉시 생성하여 업데이터가 읽을 수 있는 시크릿으로 바인딩
-    # =======================================================================
-    - name: 15-5. AWS ECR에서 보안 인증 비밀번호를 발급받아 전용 시크릿으로 주입
-      shell: |
-        ECR_TOKEN=$(aws ecr get-login-password --region {{ region }})
-        kubectl create secret generic aws-ecr-creds \
-          -n argocd \
-          --from-literal=token="AWS:${ECR_TOKEN}" \
-          --overwrite=true || true
-
-    - name: 15-3. IRSA 권한 및 설정 반영을 위해 Image Updater 재시작
-      command: "kubectl rollout restart deployment argocd-image-updater -n argocd"
-
-    # =======================================================================
-    # [유지] 깃허브에 배포 파일을 push 할 수 있도록 PAT 토큰을 시크릿으로 주입
-    # =======================================================================
-    - name: 15-4. Image Updater가 GitHub Git Write-back 시 사용할 깃허브 토큰 시크릿 생성
+    - name: 10. ArgoCD Image Updater의 Git Write-back을 위한 GitHub PAT 시크릿 생성
       shell: |
         kubectl create secret generic git-write-back-secret \
           -n argocd \
-          --from-literal=git.username="Seungmin-Jeong2001" \
-          --from-literal=git.password="{{ lookup('env', 'GITHUB_PAT') }}" \
-          --overwrite=true || true
+          --from-literal=git.password={{ lookup('env', 'GITHUB_PAT') }} \
+          --dry-run=client -o yaml | kubectl apply -f -
 
-    - name: 16. ArgoCD Application 및 Image Updater 설정 적용
+    - name: 11. ArgoCD Application 설정 적용 (GitOps 연결)
       command: "kubectl apply -f ../manifest-repo/argocd-app.yaml"
 
     - name: 🎉 [인프라 구축 완료 보고서]
       debug:
         msg:
           - "=========================================================="
-          - " EKS 클러스터: {{ cluster_name }} (VPC: {{ vpc_id }})"
-          - " 엔드포인트: {{ cluster_endpoint }}"
-          - " ArgoCD URL: http://{{ argocd_url.stdout }}"
+          - " EKS 클러스터: {{ cluster_name }}"
+          - " Cloudflare Tunnel을 통해 외부 접속 환경을 구성했습니다. (비용 $0)"
+          - "----------------------------------------------------------"
+          - " ArgoCD URL: https://argocd.bucheongoyangijanggun.com"
           - " ArgoCD Password: {{ argocd_password.stdout }}"
+          - " Python App URL: https://app.bucheongoyangijanggun.com"
+          - " [주의] Cloudflare API 토큰 및 Zone ID가 올바르게 설정되어야 합니다."
           - "=========================================================="

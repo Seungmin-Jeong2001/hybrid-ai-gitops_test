@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hybrid-ai-app
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hybrid-ai-app
+  template:
+    metadata:
+      labels:
+        app: hybrid-ai-app
+    spec:
+      containers:
+        - name: hybrid-ai-app
+          image: 380958218266.dkr.ecr.ap-northeast-2.amazonaws.com/hybrid-ai-app:latest
+          ports:
+            - containerPort: 5000
