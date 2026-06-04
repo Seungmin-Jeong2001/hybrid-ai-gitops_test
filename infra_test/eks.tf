@@ -21,15 +21,15 @@ module "eks" {
   eks_managed_node_groups = {
     web_nodes = {
       min_size     = 1
-      max_size     = 3
-      desired_size = 2 # ArgoCD와 어플리케이션 배포를 위해 최소 2대 설정
+      max_size     = 5
+      desired_size = 3 # t3.small 사용 시 Pod 수용량을 위해 3대 필수 (3대 x 11개 = 33개)
 
-      # t3.micro보다 메모리가 2배 많은 t3.small 사용 (2vCPU, 2GiB RAM)
+      # 이전에 성공했던 t3.small로 복구
       instance_types = ["t3.small"]
       ami_type       = "AL2023_x86_64_STANDARD"
 
-      # 비용 절감을 위해 스팟 인스턴스 유지
-      capacity_type = "SPOT"
+      # 스팟 에러 방지를 위해 온디맨드 사용
+      capacity_type = "ON_DEMAND"
 
       # ECR 이미지 풀 권한을 명시적으로 추가
       iam_role_additional_policies = {

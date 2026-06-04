@@ -56,13 +56,56 @@
     - name: 7. KServe 의존성 Cert-Manager 설치
       command: "kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml"
 
+    - name: 7-1. Cert-Manager가 준비될 때까지 대기
+      command: "kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=300s"
+
     - name: 8. KServe 설치 (RawDeployment 모드)
       shell: |
         kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve.yaml
         kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve-runtimes.yaml
 
-    - name: 9. ArgoCD Image Updater 설치
-      command: "kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v0.12.2/manifests/install.yaml"
+    - name: 8-1. KServe Webhook을 위한자체 서명 인증서 생성
+      shell: |
+        kubectl apply -f - <<EOF
+        apiVersion: cert-manager.io/v1
+        kind: Issuer
+        metadata:
+          name: selfsigned-issuer
+          namespace: kserve
+        spec:
+          selfSigned: {}
+        ---
+        apiVersion: cert-manager.io/v1
+        kind: Certificate
+        metadata:
+          name: kserve-webhook-server-cert
+          namespace: kserve
+        spec:
+          dnsNames:
+          - kserve-webhook-server-service.kserve.svc
+          - kserve-webhook-server-service.kserve.svc.cluster.local
+          issuerRef:
+            kind: Issuer
+            name: selfsigned-issuer
+          secretName: kserve-webhook-server-cert
+        EOF
+
+    - name: 8-2. KServe를 RawDeployment 모드로 설정 및 이미지 패치
+      shell: |
+        # Knative 미사용 설정
+        kubectl patch configmap inferenceservice-config -n kserve --type merge -p '{"data": {"deploy": "{\"defaultDeploymentMode\": \"RawDeployment\"}"}}'
+        # 깨진 kube-rbac-proxy 이미지 패치 (gcr.io -> quay.io)
+        kubectl set image deployment/kserve-controller-manager -n kserve kube-rbac-proxy=quay.io/brancz/kube-rbac-proxy:v0.13.1
+
+    - name: 8-3. KServe 컨트롤러가 준비될 때까지 대기
+      command: "kubectl wait --for=condition=Available deployment/kserve-controller-manager -n kserve --timeout=300s"
+
+    - name: 9. ArgoCD Image Updater 설치 및 권한 설정
+      shell: |
+        kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v0.12.2/manifests/install.yaml
+        # ECR 접근을 위한 IAM Role 주석 추가 (IRSA)
+        kubectl annotate serviceaccount argocd-image-updater -n argocd --overwrite \
+          eks.amazonaws.com/role-arn=arn:aws:iam::{{ lookup('pipe', 'aws sts get-caller-identity --query Account --output text') }}:role/argocd-image-updater-role
 
     - name: 10. ArgoCD Image Updater의 Git Write-back을 위한 GitHub PAT 시크릿 생성
       shell: |
@@ -84,5 +127,5 @@
           - " ArgoCD URL: https://argocd.bucheongoyangijanggun.com"
           - " ArgoCD Password: {{ argocd_password.stdout }}"
           - " Python App URL: https://app.bucheongoyangijanggun.com"
-          - " [주의] Cloudflare API 토큰 및 Zone ID가 올바르게 설정되어야 합니다."
+          - " [주의] GITHUB_PAT 환경변수가 설정되어 있어야 Git 업데이트가 가능합니다."
           - "=========================================================="
