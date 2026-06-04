@@ -25,33 +25,33 @@
       delay: 5
       until: argocd_password.rc == 0
 
-    - name: 6. Cloudflare Tunnel (cloudflared) 에이전트 배포
-      shell: |
-        kubectl apply -f - <<EOF
-        apiVersion: apps/v1
-        kind: Deployment
-        metadata:
-          name: cloudflared
-          namespace: kube-system
-        spec:
-          selector:
-            matchLabels:
-              app: cloudflared
-          template:
-            metadata:
-              labels:
-                app: cloudflared
-            spec:
-              containers:
-              - name: cloudflared
-                image: cloudflare/cloudflared:latest
-                args:
-                - tunnel
-                - --no-autoupdate
-                - run
-                - --token
-                - {{ cloudflare_tunnel_token }}
-        EOF
+    # - name: 6. Cloudflare Tunnel (cloudflared) 에이전트 배포
+    #   shell: |
+    #     kubectl apply -f - <<EOF
+    #     apiVersion: apps/v1
+    #     kind: Deployment
+    #     metadata:
+    #       name: cloudflared
+    #       namespace: kube-system
+    #     spec:
+    #       selector:
+    #         matchLabels:
+    #           app: cloudflared
+    #       template:
+    #         metadata:
+    #           labels:
+    #             app: cloudflared
+    #         spec:
+    #           containers:
+    #           - name: cloudflared
+    #             image: cloudflare/cloudflared:latest
+    #             args:
+    #             - tunnel
+    #             - --no-autoupdate
+    #             - run
+    #             - --token
+    #             - {{ cloudflare_tunnel_token }}
+    #     EOF
 
     - name: 7. KServe 의존성 Cert-Manager 설치
       command: "kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml"
@@ -99,20 +99,6 @@
 
     - name: 8-3. KServe 컨트롤러가 준비될 때까지 대기
       command: "kubectl wait --for=condition=Available deployment/kserve-controller-manager -n kserve --timeout=300s"
-
-    - name: 9. ArgoCD Image Updater 설치 및 권한 설정
-      shell: |
-        kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v0.12.2/manifests/install.yaml
-        # ECR 접근을 위한 IAM Role 주석 추가 (IRSA)
-        kubectl annotate serviceaccount argocd-image-updater -n argocd --overwrite \
-          eks.amazonaws.com/role-arn=arn:aws:iam::{{ lookup('pipe', 'aws sts get-caller-identity --query Account --output text') }}:role/argocd-image-updater-role
-
-    - name: 10. ArgoCD Image Updater의 Git Write-back을 위한 GitHub PAT 시크릿 생성
-      shell: |
-        kubectl create secret generic git-write-back-secret \
-          -n argocd \
-          --from-literal=git.password={{ lookup('env', 'GITHUB_PAT') }} \
-          --dry-run=client -o yaml | kubectl apply -f -
 
     - name: 11. ArgoCD Application 설정 적용 (GitOps 연결)
       command: "kubectl apply -f ../manifest-repo/argocd-app.yaml"

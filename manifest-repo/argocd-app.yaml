@@ -3,37 +3,18 @@ kind: Application
 metadata:
   name: hybrid-ai-stack
   namespace: argocd
-  annotations:
-    # 1. 감시 대상 ECR 이미지 설정 (별칭: model)
-    argocd-image-updater.argoproj.io/image-list: model=380958218266.dkr.ecr.ap-northeast-2.amazonaws.com/ai-serving-api
-    
-    # 2. 업데이트 전략 (최신 이미지, 8자리 SHA 태그 필터링)
-    argocd-image-updater.argoproj.io/model.allow-tags: regexp:^[a-z0-9]{8}$
-    argocd-image-updater.argoproj.io/model.update-strategy: latest
-    
-    # 3. Git Write-back 설정 (변경 사항을 Git에 다시 쓰기)
-    argocd-image-updater.argoproj.io/write-back-method: git
-    argocd-image-updater.argoproj.io/git-repository: https://github.com/Seungmin-Jeong2001/hybrid-ai-gitops_test.git
-    argocd-image-updater.argoproj.io/write-back-secret: secret:argocd/git-write-back-secret#git.password
-
 spec:
+  destination:
+    namespace: default
+    server: https://kubernetes.default.svc
   project: default
-  
-  # 어디서 소스를 가져올 것인가 (Source)
   source:
+    path: manifest-repo
     repoURL: https://github.com/Seungmin-Jeong2001/hybrid-ai-gitops_test.git
     targetRevision: HEAD
-    path: manifest-repo
-  
-  # 어디에 배포할 것인가 (Destination)
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: default
-  
-  # 어떻게 동기화할 것인가 (Sync Policy)
   syncPolicy:
     automated:
-      prune: true      # Git에서 삭제된 리소스는 클러스터에서도 삭제
-      selfHeal: true   # 누군가 수동으로 클러스터를 고치면 Git 기준으로 복구
+      prune: true
+      selfHeal: true
     syncOptions:
-      - CreateNamespace=true # 네임스페이스가 없으면 자동 생성
+      - CreateNamespace=true
