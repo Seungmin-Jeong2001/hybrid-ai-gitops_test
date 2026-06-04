@@ -64,3 +64,6 @@ kubeconfig
 
 inventory.ini
 pf_log.txt
+
+*.tfvars
+.env

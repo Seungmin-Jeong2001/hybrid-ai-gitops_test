@@ -20,9 +20,9 @@ module "eks" {
 
   eks_managed_node_groups = {
     web_nodes = {
-      min_size     = 0
+      min_size     = 1
       max_size     = 3
-      desired_size = 0 # 비용 절감을 위해 기본 0대로 설정 (필요 시 1~2대로 조정하여 사용)
+      desired_size = 2 # ArgoCD와 어플리케이션 배포를 위해 최소 2대 설정
 
       # t3.micro보다 메모리가 2배 많은 t3.small 사용 (2vCPU, 2GiB RAM)
       instance_types = ["t3.small"]

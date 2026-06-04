@@ -20,6 +20,6 @@ output "kubectl_connect_command" {
 
 output "cloudflare_tunnel_token" {
   description = "Cloudflare Tunnel 접속을 위한 인증 토큰"
-  value       = cloudflare_tunnel.eks_tunnel.tunnel_token
+  value       = cloudflare_zero_trust_tunnel_cloudflared.eks_tunnel.tunnel_token
   sensitive   = true
 }

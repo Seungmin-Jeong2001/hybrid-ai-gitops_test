@@ -14,7 +14,7 @@ resource "random_password" "tunnel_secret" {
   special = false
 }
 
-resource "cloudflare_tunnel" "eks_tunnel" {
+resource "cloudflare_zero_trust_tunnel_cloudflared" "eks_tunnel" {
   account_id = var.cloudflare_account_id
   name       = "eks-gitops-tunnel"
   secret     = base64encode(random_password.tunnel_secret.result)
@@ -24,7 +24,7 @@ resource "cloudflare_tunnel" "eks_tunnel" {
 resource "cloudflare_record" "argocd" {
   zone_id = var.cloudflare_zone_id
   name    = "argocd"
-  value   = "${cloudflare_tunnel.eks_tunnel.id}.cfargotunnel.com"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.eks_tunnel.id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
 }
@@ -33,15 +33,15 @@ resource "cloudflare_record" "argocd" {
 resource "cloudflare_record" "python_app" {
   zone_id = var.cloudflare_zone_id
   name    = "app"
-  value   = "${cloudflare_tunnel.eks_tunnel.id}.cfargotunnel.com"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.eks_tunnel.id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
 }
 
 # 터널 구성 (Ingress Rules)
-resource "cloudflare_tunnel_config" "eks_tunnel_config" {
+resource "cloudflare_zero_trust_tunnel_cloudflared_config" "eks_tunnel_config" {
   account_id = var.cloudflare_account_id
-  tunnel_id  = cloudflare_tunnel.eks_tunnel.id
+  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.eks_tunnel.id
 
   config {
     ingress_rule {
@@ -60,9 +60,4 @@ resource "cloudflare_tunnel_config" "eks_tunnel_config" {
       service = "http_status:404"
     }
   }
-}
-
-output "cloudflare_tunnel_token" {
-  value     = cloudflare_tunnel.eks_tunnel.tunnel_token
-  sensitive = true
 }

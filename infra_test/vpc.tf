@@ -12,6 +12,9 @@ module "vpc" {
   # 비용 절감을 위해 NAT 게이트웨이 비활성화 (월 약 4.5만원 절감)
   enable_nat_gateway = false
   single_nat_gateway = false
+  
+  # NAT 게이트웨이가 없으므로 퍼블릭 서브넷의 인스턴스가 공인 IP를 가져야 인터넷 통신 가능
+  map_public_ip_on_launch = true
 
   # 로드밸런서가 서브넷을 찾을 수 있게 해주는 필수 태그
   public_subnet_tags = {
