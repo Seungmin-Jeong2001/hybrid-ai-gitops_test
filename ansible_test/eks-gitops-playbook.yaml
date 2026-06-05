@@ -72,23 +72,12 @@
     - name: 8-3. KServe 컨트롤러가 준비될 때까지 대기
       command: "kubectl wait --for=condition=Available deployment/kserve-controller-manager -n kserve --timeout=300s"
 
-    - name: 8-4. KServe Webhook 인증서 생성 대기 및 CA Bundle 자동 주입
+    # 🔥 [수정] 복잡한 스크립트 루프 대신 Cert-Manager 가 가치를 주입하도록 어노테이션 선언 방식으로 완전 교체
+    - name: 8-4. KServe 웹훅 및 CRD에 Cert-Manager CA 자동 주입 연동 설정
       shell: |
-        # 싱글 백슬래시(\.)로 정상 원복하여 ca.crt 데이터 추출
-        CA_BUNDLE=$(kubectl get secret kserve-webhook-server-cert -n kserve -o jsonpath='{.data.ca\.crt}')
-        
-        # 만약 값이 비어있다면 exit 1을 내고 앤서블 엔진에게 턴을 넘김
-        if [ -z "$CA_BUNDLE" ]; then
-          echo "CA Bundle을 찾을 수 없습니다. 재시도합니다..."
-          exit 1
-        fi
-        
-        # 값이 존재할 때만 CRD 패치 실행
-        kubectl patch crd inferenceservices.serving.kserve.io -p "{\"spec\":{\"conversion\":{\"webhook\":{\"clientConfig\":{\"caBundle\":\"$CA_BUNDLE\"}}}}}"
-      register: patch_result
-      retries: 20
-      delay: 5
-      until: patch_result.rc == 0
+        kubectl annotate mutatingwebhookconfiguration inferenceservice.kserve-webhook-server cert-manager.io/inject-ca-from=kserve/kserve-webhook-server-cert --overwrite
+        kubectl annotate validatingwebhookconfiguration inferenceservice.kserve-webhook-server cert-manager.io/inject-ca-from=kserve/kserve-webhook-server-cert --overwrite
+        kubectl annotate crd inferenceservices.serving.kserve.io cert-manager.io/inject-ca-from=kserve/kserve-webhook-server-cert --overwrite
 
     - name: 11. ArgoCD Application 설정 적용 (GitOps 연결)
       command: "kubectl apply -f ../manifest-repo/argocd-app.yaml"
