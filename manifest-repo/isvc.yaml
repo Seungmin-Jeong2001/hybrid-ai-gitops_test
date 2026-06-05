@@ -11,7 +11,7 @@ spec:
     maxReplicas: 3
     containers:
       - name: kserve-container
-        image: 380958218266.dkr.ecr.ap-northeast-2.amazonaws.com/ai-serving-api:0c7346c9
+        image: 380958218266.dkr.ecr.ap-northeast-2.amazonaws.com/ai-serving-api:f78e2906
         ports:
           - containerPort: 5000
         resources:
