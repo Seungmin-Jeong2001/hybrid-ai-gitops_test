@@ -72,8 +72,8 @@
     - name: 8-3. KServe 컨트롤러가 준비될 때까지 대기
       command: "kubectl wait --for=condition=Available deployment/kserve-controller-manager -n kserve --timeout=300s"
 
-    # 🔥 [중앙 통제형 8-4번 수술] 미들웨어를 거치지 않고 앤서블이 직접 신분증(CA)을 낚아채 웹훅 인프라를 정밀 격파 패치함
-    - name: 8-4. KServe 웹훅 검문소 TLS 강제 다이렉트 패치
+    # 🔥 [완전체 8-4번] 웹훅 장부와 CRD 자원 명세서까지 3중 방어막으로 묶어 강제 다이렉트 패치 완료
+    - name: 8-4. KServe 웹훅 및 CRD 전체 TLS 강제 정밀 패치
       shell: |
         # 1. 시크릿 주머니에서 대기 중인 진짜 실물 CA 값 추출
         CA_BUNDLE=$(kubectl get secret kserve-webhook-server-cert -n kserve -o jsonpath='{.data.ca\.crt}')
@@ -83,15 +83,17 @@
           exit 1
         fi
         
-        # 2. Mutating Webhook에 다이렉트 주입 (경로 0번, 1번 모두 방어)
-        kubectl patch mutatingwebhookconfiguration inferenceservice.kserve-webhook-server --type='json' -p="[{\"op\": \"replace\", \"path\": \"/webhooks/0/clientConfig/caBundle\", \"value\":\"${CA_BUNDLE}\"}]"
-        kubectl patch mutatingwebhookconfiguration inferenceservice.kserve-webhook-server --type='json' -p="[{\"op\": \"replace\", \"path\": \"/webhooks/1/clientConfig/caBundle\", \"value\":\"${CA_BUNDLE}\"}]" 2>/dev/null
+        # 2. 확인된 진짜 이름(inferenceservice.serving.kserve.io)으로 Mutating Webhook 패치
+        kubectl patch mutatingwebhookconfiguration inferenceservice.serving.kserve.io --type='json' -p="[{\"op\": \"replace\", \"path\": \"/webhooks/0/clientConfig/caBundle\", \"value\":\"${CA_BUNDLE}\"}]"
+        kubectl patch mutatingwebhookconfiguration inferenceservice.serving.kserve.io --type='json' -p="[{\"op\": \"replace\", \"path\": \"/webhooks/1/clientConfig/caBundle\", \"value\":\"${CA_BUNDLE}\"}]" 2>/dev/null
         
-        # 3. Validating Webhook에도 다이렉트 주입
-        kubectl patch validatingwebhookconfiguration inferenceservice.kserve-webhook-server --type='json' -p="[{\"op\": \"replace\", \"path\": \"/webhooks/0/clientConfig/caBundle\", \"value\":\"${CA_BUNDLE}\"}]"
-        kubectl patch validatingwebhookconfiguration inferenceservice.kserve-webhook-server --type='json' -p="[{\"op\": \"replace\", \"path\": \"/webhooks/1/clientConfig/caBundle\", \"value\":\"${CA_BUNDLE}\"}]" 2>/dev/null
+        # 3. 확인된 진짜 이름으로 Validating Webhook 패치
+        kubectl patch validatingwebhookconfiguration inferenceservice.serving.kserve.io --type='json' -p="[{\"op\": \"replace\", \"path\": \"/webhooks/0/clientConfig/caBundle\", \"value\":\"${CA_BUNDLE}\"}]"
+        
+        # 4. 🔥 [누락 코드 부활] CRD 자체의 Conversion Webhook 명세에도 신분증 강제 주입
+        kubectl patch crd inferenceservices.serving.kserve.io --type='merge' -p "{\"spec\":{\"conversion\":{\"webhook\":{\"clientConfig\":{\"caBundle\":\"${CA_BUNDLE}\"}}}}}"
       register: force_patch_result
-      retries: 20
+      retries: 10
       delay: 5
       until: force_patch_result.rc == 0
 
