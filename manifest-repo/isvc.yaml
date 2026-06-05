@@ -3,8 +3,6 @@ kind: InferenceService
 metadata:
   name: hybrid-ai-model
   namespace: default
-  annotations:
-    serving.kserve.io/deploymentMode: RawDeployment
 spec:
   predictor:
     minReplicas: 1

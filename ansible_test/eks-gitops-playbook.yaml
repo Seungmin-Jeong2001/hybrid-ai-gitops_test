@@ -1,5 +1,5 @@
 ---
-- name: EKS 클러스터 위에 ArgoCD 및 Cloudflare Tunnel 설치 자동화
+- name: EKS 클러스터 위에 ArgoCD 및 KServe(RawMode) 설치 자동화
   hosts: localhost
   connection: local
   gather_facts: no
@@ -15,8 +15,8 @@
     - name: 3. EKS 클러스터 내부에 ArgoCD 엔진 설치
       command: "kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
 
-    - name: 4. ArgoCD Pod가 준비될 때까지 대기
-      command: "kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s"
+    - name: 4. ArgoCD 컨트롤러 엔진들이 준비될 때까지 대기
+      command: "kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s"
 
     - name: 5. ArgoCD 대시보드 진입용 초기 어드민 비밀번호 추출
       shell: "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
@@ -24,34 +24,6 @@
       retries: 10
       delay: 5
       until: argocd_password.rc == 0
-
-    # - name: 6. Cloudflare Tunnel (cloudflared) 에이전트 배포
-    #   shell: |
-    #     kubectl apply -f - <<EOF
-    #     apiVersion: apps/v1
-    #     kind: Deployment
-    #     metadata:
-    #       name: cloudflared
-    #       namespace: kube-system
-    #     spec:
-    #       selector:
-    #         matchLabels:
-    #           app: cloudflared
-    #       template:
-    #         metadata:
-    #           labels:
-    #             app: cloudflared
-    #         spec:
-    #           containers:
-    #           - name: cloudflared
-    #             image: cloudflare/cloudflared:latest
-    #             args:
-    #             - tunnel
-    #             - --no-autoupdate
-    #             - run
-    #             - --token
-    #             - {{ cloudflare_tunnel_token }}
-    #     EOF
 
     - name: 7. KServe 의존성 Cert-Manager 설치
       command: "kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml"
@@ -64,31 +36,31 @@
         kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve.yaml
         kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve-runtimes.yaml
 
-    - name: 8-1. KServe Webhook을 위한자체 서명 인증서 생성
-      shell: |
-        kubectl apply -f - <<EOF
-        apiVersion: cert-manager.io/v1
-        kind: Issuer
-        metadata:
-          name: selfsigned-issuer
-          namespace: kserve
-        spec:
-          selfSigned: {}
-        ---
-        apiVersion: cert-manager.io/v1
-        kind: Certificate
-        metadata:
-          name: kserve-webhook-server-cert
-          namespace: kserve
-        spec:
-          dnsNames:
-          - kserve-webhook-server-service.kserve.svc
-          - kserve-webhook-server-service.kserve.svc.cluster.local
-          issuerRef:
-            kind: Issuer
+    - name: 8-1. KServe Webhook을 위한 자체 서명 인증서 생성
+      shell: "kubectl apply -f -"
+      args:
+        stdin: |
+          apiVersion: cert-manager.io/v1
+          kind: Issuer
+          metadata:
             name: selfsigned-issuer
-          secretName: kserve-webhook-server-cert
-        EOF
+            namespace: kserve
+          spec:
+            selfSigned: {}
+          ---
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: kserve-webhook-server-cert
+            namespace: kserve
+          spec:
+            dnsNames:
+            - kserve-webhook-server-service.kserve.svc
+            - kserve-webhook-server-service.kserve.svc.cluster.local
+            issuerRef:
+              kind: Issuer
+              name: selfsigned-issuer
+            secretName: kserve-webhook-server-cert
 
     - name: 8-2. KServe를 RawDeployment 모드로 설정 및 이미지 패치
       shell: |
@@ -100,10 +72,23 @@
     - name: 8-3. KServe 컨트롤러가 준비될 때까지 대기
       command: "kubectl wait --for=condition=Available deployment/kserve-controller-manager -n kserve --timeout=300s"
 
-    - name: 8-4. KServe Webhook CA Bundle 자동 주입
+    - name: 8-4. KServe Webhook 인증서 생성 대기 및 CA Bundle 자동 주입
       shell: |
+        # 싱글 백슬래시(\.)로 정상 원복하여 ca.crt 데이터 추출
         CA_BUNDLE=$(kubectl get secret kserve-webhook-server-cert -n kserve -o jsonpath='{.data.ca\.crt}')
+        
+        # 만약 값이 비어있다면 exit 1을 내고 앤서블 엔진에게 턴을 넘김
+        if [ -z "$CA_BUNDLE" ]; then
+          echo "CA Bundle을 찾을 수 없습니다. 재시도합니다..."
+          exit 1
+        fi
+        
+        # 값이 존재할 때만 CRD 패치 실행
         kubectl patch crd inferenceservices.serving.kserve.io -p "{\"spec\":{\"conversion\":{\"webhook\":{\"clientConfig\":{\"caBundle\":\"$CA_BUNDLE\"}}}}}"
+      register: patch_result
+      retries: 20
+      delay: 5
+      until: patch_result.rc == 0
 
     - name: 11. ArgoCD Application 설정 적용 (GitOps 연결)
       command: "kubectl apply -f ../manifest-repo/argocd-app.yaml"
